@@ -13,6 +13,20 @@ type PromptCocoaPodsInstallation = {
   promptQuestion: string;
 };
 
+function shouldUseRubyBundler() {
+  return fs.existsSync('Gemfile')
+}
+
+async function podCommand(
+  ...args: string[]
+) {
+  if (shouldUseRubyBundler()) {
+    await execa('bundle', ['exec', 'pod', ...args])
+  } else {
+    await execa('pod', args)
+  }
+}
+
 async function runPodInstall(
   loader: Loader,
   directory: string,
@@ -24,7 +38,7 @@ async function runPodInstall(
         '(this may take a few minutes)',
       )}`,
     );
-    await execa('pod', ['install']);
+    await podCommand('install');
   } catch (error) {
     // "pod" command outputs errors to stdout (at least some of them)
     const stderr = error.stderr || error.stdout;
@@ -57,7 +71,7 @@ async function runPodUpdate(loader: Loader) {
         '(this may take a few minutes)',
       )}`,
     );
-    await execa('pod', ['repo', 'update']);
+    await podCommand('repo', 'update');
   } catch (error) {
     // "pod" command outputs errors to stdout (at least some of them)
     logger.log(error.stderr || error.stdout);
@@ -130,6 +144,22 @@ async function installCocoaPodsWithGem() {
 async function installCocoaPods(loader: Loader) {
   loader.stop();
 
+  if (shouldUseRubyBundler()) {
+    loader.start('Installing Gems');
+
+    try {
+      await execa('bundle', ['install']);
+      return loader.succeed();
+    } catch (error) {
+      loader.fail();
+      logger.error(error.stderr);
+
+      throw new Error(
+        `An error occured while trying to install ruby gems using 'bundle install'`
+      );
+    }
+  }
+
   const {installMethod} = await promptCocoaPodsInstallationQuestion();
 
   if (installMethod === 'gem') {
@@ -185,7 +215,7 @@ async function installPods({
       // Check if "pod" is available and usable. It happens that there are
       // multiple versions of "pod" command and even though it's there, it exits
       // with a failure
-      await execa('pod', ['--version']);
+      await podCommand('--version');
     } catch (e) {
       loader.info();
       await installCocoaPods(loader);
